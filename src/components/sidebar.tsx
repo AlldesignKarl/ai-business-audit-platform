@@ -13,6 +13,7 @@ import {
   Search,
   Bot,
   Sparkles,
+  Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +21,7 @@ const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/businesses", label: "Negocios", icon: Building2 },
   { href: "/discovery", label: "Prospección", icon: Search },
+  { href: "/automations", label: "Automatizaciones", icon: Zap },
   { href: "/approvals", label: "Approval Center", icon: ShieldCheck },
   { href: "/ai-agents", label: "AI Agents", icon: Bot },
   { href: "/system-health", label: "System Health", icon: Activity },

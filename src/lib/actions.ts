@@ -5,12 +5,14 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import type { ConnectorType } from "@prisma/client";
 import { db } from "@/lib/db";
-import { getEnv } from "@/lib/env";
+import { getEnv, getCapabilities } from "@/lib/env";
 import { requireRole, assertSameOrganization } from "@/lib/security/rbac";
 import { enqueueJob } from "@/lib/queue/queues";
 import { decideApproval } from "@/lib/approvals/approval-service";
 import { createConnectorInstance } from "@/lib/connectors/registry";
 import { DEFAULT_CONNECTOR_PERMISSIONS, type ConnectorPermissions } from "@/lib/connectors/types";
+import { runAiTask } from "@/lib/ai/orchestrator";
+import { AUTOMATION_AVAILABLE_EVENTS, AUTOMATION_AVAILABLE_ACTIONS } from "@/lib/automation/constants";
 
 /** Convierte cadenas vacías en `undefined` para que `.default()`/`.optional()` de Zod
  *  se apliquen igual si un campo de formulario se envía en blanco (p.ej. un
@@ -267,4 +269,163 @@ export async function requestSendReportEmailAction(formData: FormData) {
   revalidatePath("/approvals");
   revalidatePath(`/businesses/${businessId}`);
   redirect(`/businesses/${businessId}?reportEmailRequested=1`);
+}
+
+interface AutomationSuggestion {
+  name?: string;
+  explanation?: string;
+  trigger?: { event?: string };
+  conditions?: unknown[];
+  actions?: unknown[];
+}
+
+const automationAgentSchema = z.object({ goal: z.string().min(5, "Describe el objetivo con al menos unas palabras") });
+
+/** Agente de Automatización: traduce un objetivo en lenguaje natural a un
+ *  borrador de automatización (isActive: false) que el usuario revisa y
+ *  activa manualmente — nunca se activa sola. */
+export async function runAutomationAgentAction(formData: FormData) {
+  const user = await requireRole("ADMIN");
+  const parsed = automationAgentSchema.safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) {
+    redirect(`/automations?error=${encodeURIComponent(parsed.error.issues.map((i) => i.message).join(" "))}`);
+  }
+  if (!getCapabilities().ai) {
+    redirect(
+      `/automations?error=${encodeURIComponent("El Agente de Automatización necesita ANTHROPIC_API_KEY configurada en el servidor. Mientras tanto, crea automatizaciones manualmente.")}`
+    );
+  }
+
+  const [connectors, existingAutomations] = await Promise.all([
+    db.connector.findMany({ where: { organizationId: user.organizationId, status: "CONNECTED" } }),
+    db.automation.findMany({ where: { organizationId: user.organizationId }, select: { name: true } }),
+  ]);
+
+  let text: string;
+  try {
+    text = await runAiTask({
+      organizationId: user.organizationId,
+      type: "automation_agent_suggestion",
+      complexity: "simple",
+      context: {
+        goal: parsed.data.goal,
+        availableEvents: AUTOMATION_AVAILABLE_EVENTS,
+        availableActions: AUTOMATION_AVAILABLE_ACTIONS,
+        connectedConnectors: connectors.map((c) => c.type),
+        existingAutomations: existingAutomations.map((a) => a.name),
+      },
+    });
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error("[runAutomationAgentAction] error consultando IA:", error);
+    redirect(`/automations?error=${encodeURIComponent("No se pudo consultar al Agente de Automatización. Inténtalo de nuevo.")}`);
+  }
+
+  let suggestion: AutomationSuggestion | null = null;
+  try {
+    suggestion = JSON.parse(text) as AutomationSuggestion;
+  } catch {
+    suggestion = null;
+  }
+  if (!suggestion?.trigger?.event) {
+    redirect(
+      `/automations?error=${encodeURIComponent("La IA no devolvió una sugerencia válida. Prueba a describir el objetivo de forma más concreta.")}`
+    );
+  }
+
+  const automation = await db.automation.create({
+    data: {
+      organizationId: user.organizationId,
+      name: suggestion.name?.trim() || "Automatización sugerida por IA",
+      trigger: { event: suggestion.trigger.event } as object,
+      conditions: (suggestion.conditions ?? []) as object,
+      actions: (suggestion.actions ?? []) as object,
+      isActive: false,
+    },
+  });
+
+  revalidatePath("/automations");
+  redirect(`/automations?created=${automation.id}`);
+}
+
+export async function toggleAutomationAction(automationId: string, isActive: boolean) {
+  const user = await requireRole("ADMIN");
+  const automation = await db.automation.findUniqueOrThrow({ where: { id: automationId } });
+  assertSameOrganization(user, automation.organizationId);
+  await db.automation.update({ where: { id: automationId }, data: { isActive } });
+  revalidatePath("/automations");
+}
+
+export async function deleteAutomationAction(automationId: string) {
+  const user = await requireRole("ADMIN");
+  const automation = await db.automation.findUniqueOrThrow({ where: { id: automationId } });
+  assertSameOrganization(user, automation.organizationId);
+  await db.automation.delete({ where: { id: automationId } });
+  revalidatePath("/automations");
+}
+
+interface ProspectingSuggestion {
+  explanation?: string;
+  country?: string;
+  city?: string;
+  province?: string;
+  category?: string;
+  sector?: string;
+  opportunityCriteria?: "any" | "high_opportunity_only";
+}
+
+const prospectingAgentSchema = z.object({ goal: z.string().min(5, "Describe qué tipo de negocios buscas") });
+
+/** Agente de Prospección: traduce un objetivo en lenguaje natural a
+ *  parámetros de búsqueda. Nunca ejecuta la búsqueda por sí solo — solo
+ *  rellena el formulario para que el usuario revise y confirme. */
+export async function runProspectingAgentAction(formData: FormData) {
+  const user = await requireRole("SALES");
+  const parsed = prospectingAgentSchema.safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) {
+    redirect(`/discovery?error=${encodeURIComponent(parsed.error.issues.map((i) => i.message).join(" "))}`);
+  }
+  if (!getCapabilities().ai) {
+    redirect(
+      `/discovery?error=${encodeURIComponent("El Agente de Prospección necesita ANTHROPIC_API_KEY configurada en el servidor. Mientras tanto, rellena la búsqueda manualmente.")}`
+    );
+  }
+
+  let text: string;
+  try {
+    text = await runAiTask({
+      organizationId: user.organizationId,
+      type: "prospecting_agent_suggestion",
+      complexity: "simple",
+      context: { goal: parsed.data.goal },
+    });
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error("[runProspectingAgentAction] error consultando IA:", error);
+    redirect(`/discovery?error=${encodeURIComponent("No se pudo consultar al Agente de Prospección. Inténtalo de nuevo.")}`);
+  }
+
+  let suggestion: ProspectingSuggestion | null = null;
+  try {
+    suggestion = JSON.parse(text) as ProspectingSuggestion;
+  } catch {
+    suggestion = null;
+  }
+  if (!suggestion?.country || !suggestion?.category) {
+    redirect(
+      `/discovery?error=${encodeURIComponent("La IA no devolvió una sugerencia válida. Prueba a describir el objetivo de forma más concreta.")}`
+    );
+  }
+
+  const params = new URLSearchParams({
+    suggested: "1",
+    country: suggestion.country,
+    category: suggestion.category,
+    ...(suggestion.city ? { city: suggestion.city } : {}),
+    ...(suggestion.province ? { province: suggestion.province } : {}),
+    ...(suggestion.sector ? { sector: suggestion.sector } : {}),
+    ...(suggestion.opportunityCriteria ? { opportunityCriteria: suggestion.opportunityCriteria } : {}),
+    ...(suggestion.explanation ? { explanation: suggestion.explanation } : {}),
+  });
+  redirect(`/discovery?${params.toString()}`);
 }

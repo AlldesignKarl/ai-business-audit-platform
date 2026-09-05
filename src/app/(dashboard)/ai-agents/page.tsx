@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -32,6 +33,37 @@ export default async function AiAgentsPage() {
           Cada cliente tiene un agente con acceso únicamente a los conectores que ha autorizado. El botón ⚡ Automático
           ejecuta el ciclo completo de análisis y genera recomendaciones — nunca publica cambios sin aprobación.
         </p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>🤖 Agente de Automatización</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0 text-sm">
+            <p className="text-muted-foreground">
+              Traduce un objetivo en lenguaje natural a una regla WHEN/IF/THEN sobre conectores y eventos reales de la
+              plataforma. Siempre crea un borrador inactivo — nunca se activa solo.
+            </p>
+            <Link href="/automations" className="mt-2 inline-block text-accent hover:underline">
+              Ir a Automatizaciones →
+            </Link>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>🤖 Agente de Prospección</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0 text-sm">
+            <p className="text-muted-foreground">
+              Traduce un objetivo de búsqueda en lenguaje natural a parámetros concretos de búsqueda de negocios.
+              Nunca lanza la búsqueda por sí solo, solo rellena el formulario para que lo confirmes.
+            </p>
+            <Link href="/discovery" className="mt-2 inline-block text-accent hover:underline">
+              Ir a Prospección →
+            </Link>
+          </CardContent>
+        </Card>
       </div>
 
       {agents.length === 0 ? (

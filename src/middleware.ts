@@ -19,5 +19,6 @@ export const config = {
     "/system-health/:path*",
     "/discovery/:path*",
     "/ai-agents/:path*",
+    "/automations/:path*",
   ],
 };

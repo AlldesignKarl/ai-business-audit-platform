@@ -29,4 +29,6 @@ export type AiRunType =
   | "agent_recommendation"
   | "email_draft"
   | "review_response"
-  | "website_proposal";
+  | "website_proposal"
+  | "automation_agent_suggestion"
+  | "prospecting_agent_suggestion";

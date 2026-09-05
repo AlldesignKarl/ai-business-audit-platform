@@ -7,6 +7,7 @@ import { evaluateSocialRules } from "@/lib/audit/rules/social-rules";
 import { computeCategoryScores, computeOverallScore, classifyImpactAndPriority, computeOpportunityScore } from "@/lib/scoring/scoring-engine";
 import { generateOpportunity } from "@/lib/scoring/opportunity-generator";
 import { recordActivity } from "@/lib/activity";
+import { triggerAutomations } from "@/lib/automation/automation-engine";
 import type { RuleFinding } from "@/lib/audit/types";
 
 /**
@@ -110,6 +111,12 @@ export async function runBusinessAudit(businessId: string): Promise<{ auditId: s
       actorType: "SYSTEM",
       action: "audit.completed",
       after: { overallScore, opportunityScore, findingsCount: findings.length },
+    });
+
+    await triggerAutomations({
+      organizationId: business.organizationId,
+      event: "audit.completed",
+      payload: { businessId, overallScore, opportunityScore, findingsCount: findings.length },
     });
 
     return { auditId: audit.id };

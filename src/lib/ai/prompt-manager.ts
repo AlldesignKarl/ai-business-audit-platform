@@ -50,6 +50,19 @@ const PROMPTS: Record<AiRunType, PromptSpec> = {
     buildUserPrompt: (ctx) =>
       `Basándote en estos hallazgos de la web de ${ctx.businessName} (sector ${ctx.category ?? "no especificado"}), propone una nueva estructura de página de inicio (secciones, en orden, con el objetivo de cada una).\n\nHallazgos: ${JSON.stringify(ctx.findings)}`,
   },
+  automation_agent_suggestion: {
+    system: `Eres el "Agente de Automatización" de una plataforma de crecimiento digital: traduces un objetivo en lenguaje natural a una automatización WHEN/IF/THEN válida dentro del motor de la plataforma. SOLO puedes usar los eventos, operadores y tipos de acción de la lista que se te da — nunca inventes uno nuevo. Responde EXCLUSIVAMENTE con un JSON válido (sin markdown, sin texto antes o después) con esta forma exacta:
+{"name": "string corto", "explanation": "1-3 frases explicando qué hace y por qué, en español", "trigger": {"event": "uno de los eventos disponibles"}, "conditions": [{"field": "string", "operator": "eq|neq|lte|gte|contains", "value": "string o número"}], "actions": [{"type": "uno de los tipos disponibles", "params": {}}]}
+Si el objetivo del usuario no encaja con ningún evento/acción disponible, devuelve conditions y actions como listas vacías y explica la limitación en "explanation". ${LANGUAGE_GUARDRAILS}`,
+    buildUserPrompt: (ctx) =>
+      `Objetivo del usuario: "${ctx.goal}"\n\nEventos disponibles: ${JSON.stringify(ctx.availableEvents)}\nTipos de acción disponibles: ${JSON.stringify(ctx.availableActions)}\nConectores conectados de la organización: ${JSON.stringify(ctx.connectedConnectors)}\nAutomatizaciones ya existentes (evita duplicar): ${JSON.stringify(ctx.existingAutomations)}`,
+  },
+  prospecting_agent_suggestion: {
+    system: `Eres el "Agente de Prospección" de una plataforma de crecimiento digital: traduces un objetivo de búsqueda en lenguaje natural a parámetros concretos del formulario de búsqueda de negocios. Responde EXCLUSIVAMENTE con un JSON válido (sin markdown, sin texto antes o después) con esta forma exacta:
+{"explanation": "1-2 frases explicando el razonamiento, en español", "country": "string", "city": "string o vacío", "province": "string o vacío", "category": "string", "sector": "string o vacío", "opportunityCriteria": "any|high_opportunity_only"}
+Nunca inventes datos de negocios reales — solo sugieres CÓMO buscar, la búsqueda real la ejecuta la plataforma después. ${LANGUAGE_GUARDRAILS}`,
+    buildUserPrompt: (ctx) => `Objetivo del usuario: "${ctx.goal}"`,
+  },
 };
 
 export function getPromptSpec(type: AiRunType): PromptSpec {
