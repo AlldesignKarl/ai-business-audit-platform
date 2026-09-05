@@ -1,0 +1,715 @@
+// AI Business Audit Platform — schema multi-tenant
+// Cada entidad de negocio cuelga de `organizationId` para aislar tenants.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Identidad / tenancy
+// ---------------------------------------------------------------------------
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  plan      String   @default("trial")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships        Membership[]
+  businesses         Business[]
+  campaigns          Campaign[]
+  emailTemplates     EmailTemplate[]
+  suppressionEntries SuppressionEntry[]
+  aiAgents           AiAgent[]
+  aiRuns             AiRun[]
+  tasks              Task[]
+  activities         Activity[]
+  auditLogs          AuditLog[]
+  automations        Automation[]
+  approvals          Approval[]
+  jobRuns            JobRun[]
+  connectors         Connector[]
+
+  @@map("organizations")
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  ANALYST
+  SALES
+  CLIENT
+  VIEWER
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String?
+  passwordHash String
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships Membership[]
+  auditLogs   AuditLog[]
+
+  @@map("users")
+}
+
+model Membership {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  role           Role     @default(VIEWER)
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@map("memberships")
+}
+
+// ---------------------------------------------------------------------------
+// Negocios (prospección + CRM)
+// ---------------------------------------------------------------------------
+
+enum BusinessStatus {
+  NEW
+  ANALYZED
+  QUALIFIED
+  CONTACTED
+  REPLIED
+  MEETING
+  CUSTOMER
+  IN_PROGRESS
+  COMPLETED
+  NOT_INTERESTED
+}
+
+model Business {
+  id             String         @id @default(cuid())
+  organizationId String
+  name           String
+  category       String?
+  sector         String?
+  country        String?
+  region         String?
+  city           String?
+  postalCode     String?
+  address        String?
+  lat            Float?
+  lng            Float?
+  language       String?
+  sizeEstimate   String?
+  website        String?
+  phone          String?
+  email          String?
+  socialLinks    Json?          @default("{}")
+  rating         Float?
+  reviewCount    Int?
+  googlePlaceId  String?
+  status         BusinessStatus @default(NEW)
+  overallScore   Int?
+  opportunityScore Int?
+  isClient       Boolean        @default(false)
+  clientSince    DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  organization  Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sources       BusinessSource[]
+  audits        Audit[]
+  opportunities Opportunity[]
+  reports       Report[]
+  contacts      Contact[]
+  emails        Email[]
+  connectors    Connector[]
+  aiAgents      AiAgent[]
+  tasks         Task[]
+  proposals     Proposal[]
+  activities    Activity[]
+  approvals     Approval[]
+
+  @@index([organizationId, status])
+  @@index([organizationId, opportunityScore])
+  @@unique([organizationId, googlePlaceId])
+  @@map("businesses")
+}
+
+model BusinessSource {
+  id         String   @id @default(cuid())
+  businessId String
+  provider   String
+  externalId String?
+  rawPayload Json?
+  confidence Float?   @default(1)
+  fetchedAt  DateTime @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@map("business_sources")
+}
+
+model Contact {
+  id             String   @id @default(cuid())
+  businessId     String
+  name           String?
+  role           String?
+  email          String?
+  phone          String?
+  isPrimary      Boolean  @default(false)
+  source         String?
+  consentStatus  String   @default("UNKNOWN") // UNKNOWN | OPTED_IN | OPTED_OUT
+  createdAt      DateTime @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  emails   Email[]
+
+  @@index([businessId])
+  @@map("contacts")
+}
+
+// ---------------------------------------------------------------------------
+// Auditoría IA
+// ---------------------------------------------------------------------------
+
+enum AuditStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+model Audit {
+  id             String      @id @default(cuid())
+  businessId     String
+  status         AuditStatus @default(QUEUED)
+  triggeredBy    String?
+  categoryScores Json?       // { website, localSeo, reputation, social, conversion, technical }
+  overallScore   Int?
+  potentialImpact String?    // HIGH | MEDIUM | LOW
+  priority        String?    // URGENT | HIGH | MEDIUM | LOW
+  modelUsed      String?
+  costUsd        Float?      @default(0)
+  error          String?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime    @default(now())
+
+  business Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  findings AuditFinding[]
+
+  @@index([businessId])
+  @@map("audits")
+}
+
+enum FindingCategory {
+  WEBSITE
+  LOCAL_SEO
+  REPUTATION
+  SOCIAL
+  CONVERSION
+  TECHNICAL
+}
+
+enum FindingSeverity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+  OPPORTUNITY
+}
+
+model AuditFinding {
+  id             String          @id @default(cuid())
+  auditId        String
+  category       FindingCategory
+  severity       FindingSeverity
+  code           String          // stable rule identifier, e.g. WEBSITE_NO_HTTPS
+  title          String
+  description    String
+  evidence       String?
+  recommendation String?
+  createdAt      DateTime        @default(now())
+
+  audit         Audit          @relation(fields: [auditId], references: [id], onDelete: Cascade)
+  opportunities Opportunity[]
+
+  @@index([auditId])
+  @@map("audit_findings")
+}
+
+enum OpportunityPriority {
+  URGENT
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum OpportunityStatus {
+  OPEN
+  PROPOSED
+  ACCEPTED
+  DISMISSED
+}
+
+model Opportunity {
+  id           String              @id @default(cuid())
+  businessId   String
+  findingId    String?
+  title        String
+  problem      String
+  opportunity  String
+  impact       String
+  solution     String
+  serviceType  String?
+  priority     OpportunityPriority @default(MEDIUM)
+  status       OpportunityStatus   @default(OPEN)
+  createdAt    DateTime            @default(now())
+
+  business Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  finding  AuditFinding? @relation(fields: [findingId], references: [id], onDelete: SetNull)
+  tasks    Task[]
+  proposalItems ProposalItem[]
+
+  @@index([businessId])
+  @@map("opportunities")
+}
+
+model Report {
+  id           String   @id @default(cuid())
+  businessId   String
+  auditId      String?
+  generatedBy  String?
+  version      Int      @default(1)
+  storageDriver String  @default("local")
+  filePath     String?
+  htmlSnapshot String?
+  createdAt    DateTime @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@map("reports")
+}
+
+// ---------------------------------------------------------------------------
+// Email comercial
+// ---------------------------------------------------------------------------
+
+model Campaign {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  type           String   @default("EMAIL")
+  status         String   @default("DRAFT") // DRAFT | ACTIVE | PAUSED | COMPLETED
+  dailyLimit     Int      @default(50)
+  templateId     String?
+  createdAt      DateTime @default(now())
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  template     EmailTemplate?  @relation(fields: [templateId], references: [id])
+  emails       Email[]
+
+  @@index([organizationId])
+  @@map("campaigns")
+}
+
+model EmailTemplate {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  subject        String
+  bodyHtml       String
+  variables      Json?    @default("[]")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  campaigns    Campaign[]
+
+  @@index([organizationId])
+  @@map("email_templates")
+}
+
+enum EmailStatus {
+  DRAFT
+  QUEUED
+  SENT
+  BOUNCED
+  FAILED
+  SUPPRESSED
+}
+
+model Email {
+  id         String      @id @default(cuid())
+  campaignId String?
+  businessId String
+  contactId  String?
+  subject    String
+  bodyHtml   String
+  status     EmailStatus @default(DRAFT)
+  providerId String?
+  sentAt     DateTime?
+  createdAt  DateTime    @default(now())
+
+  campaign Campaign?    @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  business Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  contact  Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  events   EmailEvent[]
+
+  @@index([businessId])
+  @@index([campaignId])
+  @@map("emails")
+}
+
+enum EmailEventType {
+  SENT
+  OPENED
+  CLICKED
+  BOUNCED
+  COMPLAINED
+  UNSUBSCRIBED
+  REPLIED
+}
+
+model EmailEvent {
+  id         String         @id @default(cuid())
+  emailId    String
+  type       EmailEventType
+  occurredAt DateTime       @default(now())
+  metadata   Json?
+
+  email Email @relation(fields: [emailId], references: [id], onDelete: Cascade)
+
+  @@index([emailId])
+  @@map("email_events")
+}
+
+model SuppressionEntry {
+  id             String   @id @default(cuid())
+  organizationId String
+  email          String
+  reason         String   // UNSUBSCRIBED | BOUNCED | COMPLAINED | MANUAL
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, email])
+  @@map("suppression_entries")
+}
+
+// ---------------------------------------------------------------------------
+// Conectores (plugins de integración)
+// ---------------------------------------------------------------------------
+
+enum ConnectorType {
+  GOOGLE
+  WEBSITE
+  EMAIL
+  WHATSAPP
+  INSTAGRAM
+  FACEBOOK
+  CALENDAR
+  ANALYTICS
+  CRM
+}
+
+enum ConnectorStatus {
+  DISCONNECTED
+  CONNECTED
+  ERROR
+}
+
+model Connector {
+  id             String          @id @default(cuid())
+  organizationId String
+  businessId     String?
+  type           ConnectorType
+  status         ConnectorStatus @default(DISCONNECTED)
+  permissions    Json            @default("{\"analyze\":false,\"modify\":false,\"respond\":false,\"send\":false,\"publish\":false}")
+  lastSyncAt     DateTime?
+  lastError      String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  business     Business?            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  credential   ConnectorCredential?
+
+  @@index([organizationId])
+  @@index([businessId])
+  @@map("connectors")
+}
+
+model ConnectorCredential {
+  id                    String    @id @default(cuid())
+  connectorId           String    @unique
+  encryptedAccessToken  String?
+  encryptedRefreshToken String?
+  scope                 String?
+  expiresAt             DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  connector Connector @relation(fields: [connectorId], references: [id], onDelete: Cascade)
+
+  @@map("connector_credentials")
+}
+
+// ---------------------------------------------------------------------------
+// AI Agent / AI runs / cost control
+// ---------------------------------------------------------------------------
+
+model AiAgent {
+  id               String   @id @default(cuid())
+  organizationId   String
+  businessId       String
+  name             String
+  persona          Json?    @default("{}") // tono, branding, servicios, objetivos
+  allowedConnectors Json?   @default("[]")
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  business     Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  runs         AiRun[]
+
+  @@index([organizationId])
+  @@index([businessId])
+  @@map("ai_agents")
+}
+
+model AiRun {
+  id             String   @id @default(cuid())
+  organizationId String
+  agentId        String?
+  businessId     String?
+  type           String   // audit_narrative | opportunity_phrasing | agent_recommendation | email_draft ...
+  provider       String   // anthropic | null
+  model          String?
+  input          Json?
+  output         Json?
+  tokensIn       Int?     @default(0)
+  tokensOut      Int?     @default(0)
+  costUsd        Float?   @default(0)
+  status         String   @default("COMPLETED") // COMPLETED | FAILED
+  error          String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  agent        AiAgent?     @relation(fields: [agentId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@map("ai_runs")
+}
+
+// ---------------------------------------------------------------------------
+// Tareas / propuestas
+// ---------------------------------------------------------------------------
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  REVIEW
+  APPROVED
+  COMPLETED
+}
+
+model Task {
+  id               String     @id @default(cuid())
+  organizationId   String
+  businessId       String?
+  opportunityId    String?
+  title            String
+  description      String?
+  status           TaskStatus @default(TODO)
+  assignedTo       String     @default("USER") // USER | AI_AGENT
+  approvalRequired Boolean    @default(false)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  business     Business?    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  opportunity  Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status])
+  @@map("tasks")
+}
+
+enum ProposalStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+}
+
+model Proposal {
+  id         String         @id @default(cuid())
+  businessId String
+  title      String
+  status     ProposalStatus @default(DRAFT)
+  totalPrice Float?         @default(0)
+  createdAt  DateTime       @default(now())
+
+  business Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  items    ProposalItem[]
+
+  @@index([businessId])
+  @@map("proposals")
+}
+
+model ProposalItem {
+  id            String   @id @default(cuid())
+  proposalId    String
+  opportunityId String?
+  serviceName   String
+  problem       String
+  solution       String
+  benefit       String
+  priority      String
+  price         Float    @default(0)
+
+  proposal    Proposal     @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  opportunity Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+
+  @@map("proposal_items")
+}
+
+// ---------------------------------------------------------------------------
+// Automatizaciones / aprobaciones / actividad
+// ---------------------------------------------------------------------------
+
+model Automation {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  trigger        Json     // { event: "review.created", ... }
+  conditions     Json?    @default("[]")
+  actions        Json     // ordered list of action descriptors
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  runs         AutomationRun[]
+
+  @@index([organizationId])
+  @@map("automations")
+}
+
+model AutomationRun {
+  id           String   @id @default(cuid())
+  automationId String
+  status       String   @default("COMPLETED") // COMPLETED | FAILED | AWAITING_APPROVAL
+  log          Json?
+  createdAt    DateTime @default(now())
+
+  automation Automation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+
+  @@index([automationId])
+  @@map("automation_runs")
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EDITED
+}
+
+model Approval {
+  id             String         @id @default(cuid())
+  organizationId String
+  businessId     String?
+  type           String         // website_change | email_reply | review_response | automation_action
+  title          String
+  description    String?
+  payload        Json?          // { before, after, diff }
+  status         ApprovalStatus @default(PENDING)
+  requestedBy    String         // USER | AI_AGENT | AUTOMATION
+  decidedBy      String?
+  decidedAt      DateTime?
+  createdAt      DateTime       @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  business     Business?    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+  @@map("approvals")
+}
+
+model Activity {
+  id             String   @id @default(cuid())
+  organizationId String
+  businessId     String?
+  actorType      String   // USER | AI_AGENT | SYSTEM
+  actorId        String?
+  action         String
+  before         Json?
+  after          Json?
+  connectorUsed  String?
+  result         String?  // SUCCESS | FAILURE
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  business     Business?    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([businessId])
+  @@map("activities")
+}
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  organizationId String?
+  userId         String?
+  action         String
+  entityType     String?
+  entityId       String?
+  before         Json?
+  after          Json?
+  ip             String?
+  userAgent      String?
+  createdAt      DateTime @default(now())
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@map("audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Observabilidad de jobs en background
+// ---------------------------------------------------------------------------
+
+model JobRun {
+  id             String    @id @default(cuid())
+  organizationId String?
+  queue          String
+  jobId          String
+  type           String
+  status         String    @default("RUNNING") // RUNNING | COMPLETED | FAILED
+  progress       Int?      @default(0)
+  error          String?
+  startedAt      DateTime  @default(now())
+  finishedAt     DateTime?
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, queue])
+  @@map("job_runs")
+}
