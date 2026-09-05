@@ -6,7 +6,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { decideApprovalAction } from "@/lib/actions";
 
-export default async function ApprovalsPage() {
+export default async function ApprovalsPage({
+  searchParams,
+}: {
+  searchParams: { error?: string; decided?: string };
+}) {
   const session = await getServerSession(authOptions);
   const organizationId = session!.user.organizationId;
 
@@ -22,6 +26,25 @@ export default async function ApprovalsPage() {
         <h1 className="text-2xl font-semibold">Approval Center</h1>
         <p className="text-sm text-muted-foreground">Toda acción sensible de IA o automatización pasa por aquí antes de tener efecto.</p>
       </div>
+
+      {searchParams.error && (
+        <Card className="border-destructive/40 bg-destructive/5">
+          <CardContent className="pt-5 text-sm text-destructive">{decodeURIComponent(searchParams.error)}</CardContent>
+        </Card>
+      )}
+      {searchParams.decided === "APPROVED" && (
+        <Card className="border-success/40 bg-success/5">
+          <CardContent className="pt-5 text-sm">
+            Aprobado. Si la acción incluía un envío (p.ej. email), se ha ejecutado ya — revisa la Actividad reciente en
+            el Dashboard si algo falla.
+          </CardContent>
+        </Card>
+      )}
+      {searchParams.decided === "REJECTED" && (
+        <Card className="border-border bg-muted/30">
+          <CardContent className="pt-5 text-sm text-muted-foreground">Rechazado. No se ha ejecutado ninguna acción.</CardContent>
+        </Card>
+      )}
 
       {approvals.length === 0 ? (
         <Card>

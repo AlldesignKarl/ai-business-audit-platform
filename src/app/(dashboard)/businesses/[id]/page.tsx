@@ -6,9 +6,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge, severityToVariant } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatScore } from "@/lib/utils";
-import { triggerAuditAction, triggerReportAction, createTaskAction } from "@/lib/actions";
+import { triggerAuditAction, triggerReportAction, createTaskAction, requestSendReportEmailAction } from "@/lib/actions";
 
-export default async function BusinessDetailPage({ params }: { params: { id: string } }) {
+export default async function BusinessDetailPage({
+  params,
+  searchParams,
+}: {
+  params: { id: string };
+  searchParams: { error?: string; reportEmailRequested?: string };
+}) {
   const session = await getServerSession(authOptions);
   const organizationId = session!.user.organizationId;
 
@@ -30,6 +36,23 @@ export default async function BusinessDetailPage({ params }: { params: { id: str
 
   return (
     <div className="flex flex-col gap-6">
+      {searchParams.error && (
+        <Card className="border-destructive/40 bg-destructive/5">
+          <CardContent className="pt-5 text-sm text-destructive">{decodeURIComponent(searchParams.error)}</CardContent>
+        </Card>
+      )}
+      {searchParams.reportEmailRequested && (
+        <Card className="border-success/40 bg-success/5">
+          <CardContent className="pt-5 text-sm">
+            <strong>Solicitud enviada:</strong> el envío del informe por Gmail está pendiente de aprobación en el{" "}
+            <a href="/approvals" className="text-accent hover:underline">
+              Approval Center
+            </a>
+            .
+          </CardContent>
+        </Card>
+      )}
+
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-semibold">{business.name}</h1>
@@ -136,13 +159,29 @@ export default async function BusinessDetailPage({ params }: { params: { id: str
           {business.reports.length === 0 ? (
             <p className="text-sm text-muted-foreground">Sin informes generados todavía.</p>
           ) : (
-            <ul className="text-sm">
-              {business.reports.map((r) => (
-                <li key={r.id} className="border-b border-border py-2 last:border-0">
-                  v{r.version} — {r.createdAt.toLocaleString("es-ES")}
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul className="text-sm">
+                {business.reports.map((r) => (
+                  <li key={r.id} className="border-b border-border py-2 last:border-0">
+                    v{r.version} — {r.createdAt.toLocaleString("es-ES")}
+                  </li>
+                ))}
+              </ul>
+              <form action={requestSendReportEmailAction} className="mt-3 flex gap-2 border-t border-border pt-3">
+                <input type="hidden" name="businessId" value={business.id} />
+                <input type="hidden" name="reportId" value={business.reports[0]!.id} />
+                <input
+                  name="to"
+                  type="email"
+                  required
+                  placeholder="Email del destinatario..."
+                  className="h-9 flex-1 rounded-md border border-border bg-background px-3 text-sm"
+                />
+                <Button type="submit" size="sm" variant="outline">
+                  Enviar por Gmail (requiere aprobación)
+                </Button>
+              </form>
+            </>
           )}
         </CardContent>
       </Card>

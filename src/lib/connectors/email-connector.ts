@@ -24,6 +24,7 @@ export class EmailConnector extends BaseConnector implements Connector<unknown, 
   }
 
   async authenticate() {
+    await this.saveCredentials("internal");
     return { accessToken: "internal" };
   }
 

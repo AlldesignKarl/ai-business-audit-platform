@@ -416,6 +416,7 @@ model SuppressionEntry {
 
 enum ConnectorType {
   GOOGLE
+  GMAIL
   WEBSITE
   EMAIL
   WHATSAPP

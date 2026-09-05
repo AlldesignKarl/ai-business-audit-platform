@@ -24,6 +24,7 @@ export class WebsiteConnector extends BaseConnector implements Connector<Website
   }
 
   async authenticate() {
+    await this.saveCredentials("n/a");
     return { accessToken: "n/a" };
   }
 
