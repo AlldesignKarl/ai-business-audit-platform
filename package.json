@@ -5,7 +5,7 @@
   "description": "AI Business Growth & Audit Platform — prospección, auditoría IA y optimización de negocios",
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma migrate deploy && next build",
     "start": "next start",
     "postinstall": "prisma generate",
     "lint": "eslint .",
