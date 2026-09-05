@@ -49,6 +49,20 @@ const config: Config = {
       backgroundImage: {
         "accent-gradient": "linear-gradient(135deg, hsl(var(--accent)), hsl(var(--accent-2)))",
       },
+      keyframes: {
+        "orbit-slow": {
+          "0%": { transform: "rotateY(0deg)" },
+          "100%": { transform: "rotateY(360deg)" },
+        },
+        float: {
+          "0%, 100%": { transform: "translateY(0px)" },
+          "50%": { transform: "translateY(-10px)" },
+        },
+      },
+      animation: {
+        "orbit-slow": "orbit-slow 26s linear infinite",
+        float: "float 5s ease-in-out infinite",
+      },
     },
   },
   plugins: [],
