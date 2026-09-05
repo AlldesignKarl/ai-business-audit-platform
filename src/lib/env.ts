@@ -49,10 +49,27 @@ export type Env = z.infer<typeof envSchema>;
 
 let cached: Env | null = null;
 
+/**
+ * Un panel de variables de entorno (Vercel u otros) a menudo deja una
+ * variable "creada pero vacía" en vez de simplemente no existir — con
+ * cadenas vacías, `.default()` y `.optional()` de Zod NO se aplican (solo
+ * actúan sobre `undefined`), así que una sola variable opcional en blanco
+ * tumbaría la validación de TODAS las demás. Normalizamos "" a `undefined`
+ * antes de validar para que cada variable se comporte como "no configurada"
+ * en vez de como un valor inválido.
+ */
+function stripEmptyStrings(env: NodeJS.ProcessEnv): Record<string, string | undefined> {
+  const result: Record<string, string | undefined> = {};
+  for (const [key, value] of Object.entries(env)) {
+    result[key] = value === "" ? undefined : value;
+  }
+  return result;
+}
+
 /** Valida process.env una única vez. Falla rápido si falta algo crítico. */
 export function getEnv(): Env {
   if (cached) return cached;
-  const parsed = envSchema.safeParse(process.env);
+  const parsed = envSchema.safeParse(stripEmptyStrings(process.env));
   if (!parsed.success) {
     const message = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("\n");
     throw new Error(`Configuración de entorno inválida:\n${message}`);
