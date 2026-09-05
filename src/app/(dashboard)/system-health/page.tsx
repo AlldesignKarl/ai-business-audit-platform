@@ -14,9 +14,18 @@ export default async function SystemHealthPage() {
 
   const [queueCounts, recentJobs, connectors] = await Promise.all([
     Promise.all(QUEUE_NAMES.map(async (name) => ({ name, counts: await getQueueCounts(name) }))),
-    db.jobRun.findMany({ where: { organizationId }, orderBy: { startedAt: "desc" }, take: 20 }),
-    db.connector.findMany({ where: { organizationId } }),
+    db.jobRun.findMany({ where: { organizationId }, orderBy: { startedAt: "desc" }, take: 20 }).catch((error) => {
+      // eslint-disable-next-line no-console
+      console.error("[system-health] No se pudo leer el historial de jobs:", error);
+      return [];
+    }),
+    db.connector.findMany({ where: { organizationId } }).catch((error) => {
+      // eslint-disable-next-line no-console
+      console.error("[system-health] No se pudo leer los conectores:", error);
+      return [];
+    }),
   ]);
+  const redisUnavailable = queueCounts.some((q) => !q.counts.available);
 
   return (
     <div className="flex flex-col gap-6">
@@ -39,6 +48,16 @@ export default async function SystemHealthPage() {
         </CardContent>
       </Card>
 
+      {redisUnavailable && (
+        <Card className="border-warning/40 bg-warning/5">
+          <CardContent className="pt-5 text-sm">
+            <strong>Colas no disponibles:</strong> no se pudo conectar con Redis (<code>REDIS_URL</code>). Las
+            búsquedas y análisis en background no se ejecutarán hasta que se configure. El resto de la página
+            sigue funcionando con normalidad.
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>Colas</CardTitle>
@@ -48,6 +67,7 @@ export default async function SystemHealthPage() {
             <thead className="text-left text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="py-1">Cola</th>
+                <th className="py-1">Estado</th>
                 <th className="py-1">Waiting</th>
                 <th className="py-1">Active</th>
                 <th className="py-1">Completed</th>
@@ -59,11 +79,16 @@ export default async function SystemHealthPage() {
               {queueCounts.map((q) => (
                 <tr key={q.name} className="border-t border-border">
                   <td className="py-1 font-medium">{q.name}</td>
-                  <td className="py-1">{q.counts.waiting ?? 0}</td>
-                  <td className="py-1">{q.counts.active ?? 0}</td>
-                  <td className="py-1">{q.counts.completed ?? 0}</td>
-                  <td className="py-1">{q.counts.failed ?? 0}</td>
-                  <td className="py-1">{q.counts.delayed ?? 0}</td>
+                  <td className="py-1">
+                    <Badge variant={q.counts.available ? "success" : "critical"}>
+                      {q.counts.available ? "OK" : "No disponible"}
+                    </Badge>
+                  </td>
+                  <td className="py-1">{q.counts.available ? q.counts.waiting : "—"}</td>
+                  <td className="py-1">{q.counts.available ? q.counts.active : "—"}</td>
+                  <td className="py-1">{q.counts.available ? q.counts.completed : "—"}</td>
+                  <td className="py-1">{q.counts.available ? q.counts.failed : "—"}</td>
+                  <td className="py-1">{q.counts.available ? q.counts.delayed : "—"}</td>
                 </tr>
               ))}
             </tbody>

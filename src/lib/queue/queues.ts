@@ -53,9 +53,43 @@ export async function enqueueBulk<T extends QueueName>(name: T, items: { data: J
   );
 }
 
-export async function getQueueCounts(name: QueueName) {
+/** Contadores de una cola. `available: false` indica que Redis no respondió
+ *  a tiempo — nunca lanza, para que System Health pueda seguir renderizando
+ *  el resto de la página aunque la cola esté caída. */
+export async function getQueueCounts(name: QueueName): Promise<{
+  waiting: number;
+  active: number;
+  completed: number;
+  failed: number;
+  delayed: number;
+  available: boolean;
+}> {
   const queue = getQueue(name);
-  return queue.getJobCounts("waiting", "active", "completed", "failed", "delayed");
+  try {
+    const counts = await withTimeout(
+      queue.getJobCounts("waiting", "active", "completed", "failed", "delayed"),
+      3000
+    );
+    return {
+      waiting: counts.waiting ?? 0,
+      active: counts.active ?? 0,
+      completed: counts.completed ?? 0,
+      failed: counts.failed ?? 0,
+      delayed: counts.delayed ?? 0,
+      available: true,
+    };
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error(`[queues] No se pudo leer el estado de la cola "${name}":`, error);
+    return { waiting: 0, active: 0, completed: 0, failed: 0, delayed: 0, available: false };
+  }
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`Redis timeout tras ${ms}ms`)), ms)),
+  ]);
 }
 
 export { getQueue };
