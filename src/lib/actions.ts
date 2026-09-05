@@ -1,37 +1,55 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { requireRole, assertSameOrganization } from "@/lib/security/rbac";
 import { enqueueJob } from "@/lib/queue/queues";
 import { decideApproval } from "@/lib/approvals/approval-service";
 
+/** Convierte cadenas vacías en `undefined` para que `.default()`/`.optional()` de Zod
+ *  se apliquen igual si un campo de formulario se envía en blanco (p.ej. un
+ *  <input type="number"> vacío llega como "", no como ausente). */
+const emptyToUndefined = (val: unknown) => (typeof val === "string" && val.trim() === "" ? undefined : val);
+
 const discoverySchema = z.object({
-  country: z.string().min(1),
-  city: z.string().optional(),
-  province: z.string().optional(),
-  postalCode: z.string().optional(),
-  zone: z.string().optional(),
-  category: z.string().min(1),
-  sector: z.string().optional(),
-  language: z.string().optional(),
-  maxResults: z.coerce.number().min(1).max(500).default(20),
-  opportunityCriteria: z.enum(["any", "high_opportunity_only"]).default("any"),
+  country: z.string().min(1, "El país es obligatorio"),
+  city: z.preprocess(emptyToUndefined, z.string().optional()),
+  province: z.preprocess(emptyToUndefined, z.string().optional()),
+  postalCode: z.preprocess(emptyToUndefined, z.string().optional()),
+  zone: z.preprocess(emptyToUndefined, z.string().optional()),
+  category: z.string().min(1, "La categoría es obligatoria"),
+  sector: z.preprocess(emptyToUndefined, z.string().optional()),
+  language: z.preprocess(emptyToUndefined, z.string().optional()),
+  maxResults: z.preprocess(emptyToUndefined, z.coerce.number().min(1).max(500).default(20)),
+  opportunityCriteria: z.preprocess(emptyToUndefined, z.enum(["any", "high_opportunity_only"]).default("any")),
 });
 
 export async function triggerDiscoveryAction(formData: FormData) {
   const user = await requireRole("SALES");
-  const parsed = discoverySchema.parse(Object.fromEntries(formData.entries()));
+  const parsedResult = discoverySchema.safeParse(Object.fromEntries(formData.entries()));
 
-  await enqueueJob("discover_businesses", {
-    organizationId: user.organizationId,
-    requestedBy: user.id,
-    ...parsed,
-  });
+  if (!parsedResult.success) {
+    const message = parsedResult.error.issues.map((i) => i.message).join(" ");
+    redirect(`/discovery?error=${encodeURIComponent(message)}`);
+  }
+
+  try {
+    await enqueueJob("discover_businesses", {
+      organizationId: user.organizationId,
+      requestedBy: user.id,
+      ...parsedResult.data,
+    });
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error("[triggerDiscoveryAction] error al encolar la búsqueda:", error);
+    redirect(`/discovery?error=${encodeURIComponent("No se pudo iniciar la búsqueda. Inténtalo de nuevo en unos minutos.")}`);
+  }
 
   revalidatePath("/businesses");
   revalidatePath("/dashboard");
+  redirect("/businesses?discoveryStarted=1");
 }
 
 export async function triggerAuditAction(businessId: string) {

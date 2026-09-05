@@ -19,7 +19,11 @@ const STATUS_VARIANT: Record<string, "default" | "success" | "high" | "critical"
   NOT_INTERESTED: "critical",
 };
 
-export default async function BusinessesPage({ searchParams }: { searchParams: { status?: string; q?: string } }) {
+export default async function BusinessesPage({
+  searchParams,
+}: {
+  searchParams: { status?: string; q?: string; discoveryStarted?: string };
+}) {
   const session = await getServerSession(authOptions);
   const organizationId = session!.user.organizationId;
 
@@ -35,6 +39,15 @@ export default async function BusinessesPage({ searchParams }: { searchParams: {
 
   return (
     <div className="flex flex-col gap-6">
+      {searchParams.discoveryStarted && (
+        <Card className="border-success/40 bg-success/5">
+          <CardContent className="pt-5 text-sm">
+            <strong>Búsqueda iniciada:</strong> estamos buscando negocios en background. Los nuevos resultados
+            aparecerán aquí en unos minutos — puedes recargar esta página para verlos.
+          </CardContent>
+        </Card>
+      )}
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Negocios</h1>
