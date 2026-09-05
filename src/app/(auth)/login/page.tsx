@@ -20,7 +20,10 @@ export default function LoginPage() {
     const result = await signIn("credentials", { email, password, organizationSlug, redirect: false });
     setLoading(false);
     if (result?.error) {
-      setError("Credenciales inválidas");
+      // NextAuth devuelve "CredentialsSignin" para credenciales incorrectas,
+      // pero cualquier otro error (BD caída, Redis, etc.) llega aquí tal cual
+      // lo lanzó authorize() — mostrarlo ayuda a diagnosticar en producción.
+      setError(result.error === "CredentialsSignin" ? "Email o contraseña incorrectos" : `Error: ${result.error}`);
       return;
     }
     router.push("/dashboard");

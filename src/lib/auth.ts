@@ -41,33 +41,43 @@ export const authOptions: AuthOptions = {
         if (!credentials?.email || !credentials?.password) return null;
 
         // Rate limiting por email: máximo 10 intentos cada 5 minutos, para frenar fuerza bruta.
+        // checkRateLimit ya falla abierto si Redis no está disponible.
         const rate = await checkRateLimit(`login:${credentials.email.toLowerCase()}`, 10, 300);
         if (!rate.allowed) throw new Error("Demasiados intentos de inicio de sesión. Inténtalo de nuevo en unos minutos.");
 
-        const user = await db.user.findUnique({ where: { email: credentials.email.toLowerCase() } });
-        if (!user || !user.isActive) return null;
+        try {
+          const user = await db.user.findUnique({ where: { email: credentials.email.toLowerCase() } });
+          if (!user || !user.isActive) return null;
 
-        const valid = await bcrypt.compare(credentials.password, user.passwordHash);
-        if (!valid) return null;
+          const valid = await bcrypt.compare(credentials.password, user.passwordHash);
+          if (!valid) return null;
 
-        const membership = await db.membership.findFirst({
-          where: {
-            userId: user.id,
-            ...(credentials.organizationSlug ? { organization: { slug: credentials.organizationSlug } } : {}),
-          },
-          include: { organization: true },
-          orderBy: { createdAt: "asc" },
-        });
-        if (!membership) return null;
+          const membership = await db.membership.findFirst({
+            where: {
+              userId: user.id,
+              ...(credentials.organizationSlug ? { organization: { slug: credentials.organizationSlug } } : {}),
+            },
+            include: { organization: true },
+            orderBy: { createdAt: "asc" },
+          });
+          if (!membership) return null;
 
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          organizationId: membership.organizationId,
-          organizationSlug: membership.organization.slug,
-          role: membership.role,
-        } satisfies SessionUser;
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            organizationId: membership.organizationId,
+            organizationSlug: membership.organization.slug,
+            role: membership.role,
+          } satisfies SessionUser;
+        } catch (error) {
+          // Nunca filtrar detalles internos (host/credenciales de BD) al navegador —
+          // se registran server-side (visibles en los logs de Vercel) y se
+          // devuelve un mensaje genérico.
+          // eslint-disable-next-line no-console
+          console.error("[auth] Error de base de datos durante el login:", error);
+          throw new Error("Servicio no disponible temporalmente. Inténtalo de nuevo en unos minutos.");
+        }
       },
     }),
   ],
