@@ -59,7 +59,7 @@ export default async function DashboardPage() {
             <CardHeader>
               <CardTitle>{s.label}</CardTitle>
             </CardHeader>
-            <CardContent className="pt-0 text-2xl font-semibold">{s.value}</CardContent>
+            <CardContent className="pt-0 font-mono text-2xl font-semibold tabular-nums">{s.value}</CardContent>
           </Card>
         ))}
       </div>
@@ -69,13 +69,13 @@ export default async function DashboardPage() {
           <CardHeader>
             <CardTitle>AI cost today</CardTitle>
           </CardHeader>
-          <CardContent className="pt-0 text-2xl font-semibold">${aiCostToday.toFixed(2)}</CardContent>
+          <CardContent className="gradient-text pt-0 font-mono text-2xl font-semibold tabular-nums">${aiCostToday.toFixed(2)}</CardContent>
         </Card>
         <Card>
           <CardHeader>
             <CardTitle>AI cost this month</CardTitle>
           </CardHeader>
-          <CardContent className="pt-0 text-2xl font-semibold">${aiCostMonth.toFixed(2)}</CardContent>
+          <CardContent className="gradient-text pt-0 font-mono text-2xl font-semibold tabular-nums">${aiCostMonth.toFixed(2)}</CardContent>
         </Card>
         <Card>
           <CardHeader>

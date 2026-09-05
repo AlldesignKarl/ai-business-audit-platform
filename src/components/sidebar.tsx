@@ -12,6 +12,7 @@ import {
   LogOut,
   Search,
   Bot,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -29,10 +30,15 @@ export function Sidebar({ organizationName }: { organizationName: string }) {
   const pathname = usePathname();
 
   return (
-    <aside className="flex h-screen w-60 flex-col border-r border-border bg-card">
-      <div className="border-b border-border px-4 py-4">
-        <div className="text-sm font-semibold">AI Business Audit</div>
-        <div className="text-xs text-muted-foreground">{organizationName}</div>
+    <aside className="flex h-screen w-60 flex-col border-r border-border bg-card/60 backdrop-blur-sm">
+      <div className="flex items-center gap-2.5 border-b border-border px-4 py-4">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent-gradient shadow-glow">
+          <Sparkles size={16} className="text-white" strokeWidth={2.5} />
+        </div>
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold tracking-tight">AI Business Audit</div>
+          <div className="truncate text-xs text-muted-foreground">{organizationName}</div>
+        </div>
       </div>
       <nav className="flex-1 space-y-0.5 p-2">
         {NAV_ITEMS.map((item) => {
@@ -43,11 +49,16 @@ export function Sidebar({ organizationName }: { organizationName: string }) {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors",
-                active ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                "group relative flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-all",
+                active
+                  ? "bg-accent/15 font-medium text-foreground"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
               )}
             >
-              <Icon size={16} />
+              {active && (
+                <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-accent-gradient" />
+              )}
+              <Icon size={16} className={cn(active && "text-accent")} />
               {item.label}
             </Link>
           );
@@ -56,7 +67,7 @@ export function Sidebar({ organizationName }: { organizationName: string }) {
       <div className="border-t border-border p-2">
         <button
           onClick={() => signOut({ callbackUrl: "/login" })}
-          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <LogOut size={16} />
           Cerrar sesión
