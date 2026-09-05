@@ -2,7 +2,6 @@ import type { AuthOptions, Session } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
-import { getEnv } from "@/lib/env";
 import { checkRateLimit } from "@/lib/security/rate-limit";
 import type { Role } from "@prisma/client";
 
@@ -21,9 +20,14 @@ declare module "next-auth" {
   }
 }
 
+// OJO: no usar getEnv() aquí arriba. `authOptions` se evalúa en cuanto Next.js
+// importa este módulo (incluida la fase de build "Collect page data" de
+// /api/auth/[...nextauth]), y getEnv() valida TODO el esquema de entorno
+// (DATABASE_URL, REDIS_URL, ENCRYPTION_KEY...) — si falta cualquier variable
+// no relacionada, tumbaría el build entero solo por construir este objeto.
 export const authOptions: AuthOptions = {
   session: { strategy: "jwt", maxAge: 60 * 60 * 8 },
-  secret: getEnv().AUTH_SECRET,
+  secret: process.env.AUTH_SECRET,
   pages: { signIn: "/login" },
   providers: [
     CredentialsProvider({
